@@ -2,47 +2,137 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
     protected $fillable = [
         'name',
         'email',
         'password',
+        'role',
+        'department_id',
+        'manager_id',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'password'          => 'hashed',
         ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Relationships
+    // -------------------------------------------------------------------------
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    public function manager(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'manager_id');
+    }
+
+    /** Employees directly managed by this user */
+    public function subordinates(): HasMany
+    {
+        return $this->hasMany(User::class, 'manager_id');
+    }
+
+    public function absenceRequests(): HasMany
+    {
+        return $this->hasMany(AbsenceRequest::class);
+    }
+
+    public function approvals(): HasMany
+    {
+        return $this->hasMany(Approval::class, 'approver_id');
+    }
+
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(AuditLog::class);
+    }
+
+    // -------------------------------------------------------------------------
+    // Methods (from UML)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Create a new absence request for this user.
+     */
+    public function createRequest(array $data): AbsenceRequest
+    {
+        return $this->absenceRequests()->create($data);
+    }
+
+    /**
+     * Get all absence requests for this user.
+     */
+    public function getRequests()
+    {
+        return $this->absenceRequests()->with(['absenceType', 'approvals'])->get();
+    }
+
+    /**
+     * Approve a specific absence request.
+     */
+    public function approveRequest(int $requestId, string $comment = ''): bool
+    {
+        $request = AbsenceRequest::findOrFail($requestId);
+        return $request->approve($this->current_level ?? 1, $comment);
+    }
+
+    /**
+     * Reject a specific absence request.
+     */
+    public function rejectRequest(int $requestId, string $comment = ''): bool
+    {
+        $request = AbsenceRequest::findOrFail($requestId);
+        return $request->reject($this->current_level ?? 1, $comment);
+    }
+
+    /**
+     * Get the department this user belongs to.
+     */
+    public function getDepartment(): ?Department
+    {
+        return $this->department;
+    }
+
+    /**
+     * Get the manager of this user.
+     */
+    public function getManager(): ?User
+    {
+        return $this->manager;
+    }
+
+    /**
+     * Get the total approved absence days for this user.
+     */
+    public function getTotalAbsenceDays(): int
+    {
+        return (int) $this->absenceRequests()
+            ->where('status', 'approved')
+            ->sum('days_count');
     }
 }
