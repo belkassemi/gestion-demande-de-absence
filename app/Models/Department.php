@@ -10,9 +10,8 @@ class Department extends Model
 {
     protected $fillable = ['name', 'director_id'];
 
-    // -------------------------------------------------------------------------
+
     // Relationships
-    // -------------------------------------------------------------------------
 
     public function director(): BelongsTo
     {
@@ -24,9 +23,8 @@ class Department extends Model
         return $this->hasMany(User::class);
     }
 
-    // -------------------------------------------------------------------------
     // Methods (from UML)
-    // -------------------------------------------------------------------------
+
 
     /**
      * Get all users belonging to this department.
