@@ -21,7 +21,9 @@ class User extends Authenticatable
         'password',
         'role',
         'department_id',
-        'manager_id',
+        'service_id',
+        'chef_service_id',
+        'is_active',
     ];
 
     protected $hidden = [
@@ -46,15 +48,20 @@ class User extends Authenticatable
         return $this->belongsTo(Department::class);
     }
 
-    public function manager(): BelongsTo
+    public function service(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'manager_id');
+        return $this->belongsTo(Service::class);
     }
 
-    /** Employees directly managed by this user */
-    public function subordinates(): HasMany
+    public function chefService(): BelongsTo
     {
-        return $this->hasMany(User::class, 'manager_id');
+        return $this->belongsTo(User::class, 'chef_service_id');
+    }
+
+    /** Employees in this chef's team */
+    public function teamMembers(): HasMany
+    {
+        return $this->hasMany(User::class, 'chef_service_id');
     }
 
     public function absenceRequests(): HasMany
@@ -119,11 +126,11 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the manager of this user.
+     * Get the chef service (manager) of this user.
      */
-    public function getManager(): ?User
+    public function getChefService(): ?User
     {
-        return $this->manager;
+        return $this->chefService;
     }
 
     /**

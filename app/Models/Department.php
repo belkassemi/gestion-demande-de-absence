@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Department extends Model
 {
-    protected $fillable = ['name', 'director_id'];
+    protected $fillable = ['name', 'code', 'director_id'];
 
 
     // Relationships
@@ -16,6 +16,11 @@ class Department extends Model
     public function director(): BelongsTo
     {
         return $this->belongsTo(User::class, 'director_id');
+    }
+
+    public function services(): HasMany
+    {
+        return $this->hasMany(Service::class);
     }
 
     public function users(): HasMany

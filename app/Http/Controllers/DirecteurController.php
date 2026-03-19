@@ -12,14 +12,41 @@ use Illuminate\Support\Facades\Auth;
 class DirecteurController extends Controller
 {
     /**
-     * GET /directeur/pending-requests
-     * Returns requests at level 3 (Chef + RH both approved).
+     * GET /api/directeur/pending-requests
+     *
+     * Retourne les demandes approuvées par le chef de service (niveau 1)
+     * qui attendent maintenant la décision finale du directeur (niveau 2).
+     *
+     * Middleware: auth:sanctum, role:directeur
+     *
+     * Headers:
+     *   Authorization: Bearer {token}
+     *   Accept: application/json
+     *
+     * Response 200:
+     *   [
+     *     {
+     *       "id": 1,
+     *       "user": { "name": "Employé", "department": {"name": "IT"} },
+     *       "absence_type": { "name": "Congé annuel" },
+     *       "start_date": "2026-04-01",
+     *       "end_date": "2026-04-05",
+     *       "days_count": 5,
+     *       "status": "pending",
+     *       "current_level": 2,
+     *       "approvals": [
+     *         { "level": 1, "approver_role": "chef_service", "status": "approved", "comment": "OK" },
+     *         { "level": 2, "approver_role": "directeur",    "status": "pending",  "comment": null }
+     *       ],
+     *       "employee_total_days": 15
+     *     }
+     *   ]
      */
     public function pendingRequests(): JsonResponse
     {
         $requests = AbsenceRequest::with(['user.department', 'absenceType', 'approvals.approver', 'documents'])
             ->where('status', 'pending')
-            ->where('current_level', 3)
+            ->where('current_level', 2)
             ->orderBy('created_at')
             ->get()
             ->map(function ($r) {
@@ -55,15 +82,14 @@ class DirecteurController extends Controller
         ]);
 
         if ($validated['action'] === 'approve') {
-            $absenceRequest->approve(3, $validated['comment'] ?? '');
-            $absenceRequest->update(['current_level' => 4]);
+            $absenceRequest->approve(2, $validated['comment'] ?? '');
             AuditLog::log('directeur_approved', 'AbsenceRequest', $absenceRequest->id, Auth::id());
             $message = 'Demande approuvée définitivement.';
         } else {
             if (empty($validated['comment'])) {
                 return response()->json(['message' => 'Un commentaire est obligatoire pour le rejet.'], 422);
             }
-            $absenceRequest->reject(3, $validated['comment']);
+            $absenceRequest->reject(2, $validated['comment']);
             AuditLog::log('directeur_rejected', 'AbsenceRequest', $absenceRequest->id, Auth::id());
             $message = 'Demande rejetée définitivement.';
         }
@@ -81,7 +107,7 @@ class DirecteurController extends Controller
         $lastMonthStart = now()->subMonthNoOverflow()->startOfMonth();
         $lastMonthEnd   = now()->subMonthNoOverflow()->endOfMonth();
 
-        $pendingForDirecteur = AbsenceRequest::where('status', 'pending')->where('current_level', 3)->count();
+        $pendingForDirecteur = AbsenceRequest::where('status', 'pending')->where('current_level', 2)->count();
         $approvedThisMonth   = AbsenceRequest::where('status', 'approved')->where('updated_at', '>=', $thisMonthStart)->count();
         $rejectedThisMonth   = AbsenceRequest::where('status', 'rejected')->where('updated_at', '>=', $thisMonthStart)->count();
         $approvedLastMonth   = AbsenceRequest::where('status', 'approved')->whereBetween('updated_at', [$lastMonthStart, $lastMonthEnd])->count();
@@ -161,5 +187,60 @@ class DirecteurController extends Controller
             'monthly'       => $monthly,
             'top_employees' => $topEmployees,
         ]);
+    }
+
+    /**
+     * GET /directeur/reports/export
+     * Export requests as CSV.
+     */
+    public function exportReport(Request $request)
+    {
+        $from   = $request->from   ?? now()->startOfYear()->toDateString();
+        $to     = $request->to     ?? now()->toDateString();
+        $deptId = $request->department_id;
+        $typeId = $request->absence_type_id;
+        $status = $request->status;
+
+        $requests = AbsenceRequest::with(['user.department', 'absenceType', 'approvals.approver'])
+            ->whereBetween('created_at', [$from, $to])
+            ->when($deptId, fn($q) => $q->whereHas('user', fn($u) => $u->where('department_id', $deptId)))
+            ->when($typeId, fn($q) => $q->where('absence_type_id', $typeId))
+            ->when($status, fn($q) => $q->where('status', $status))
+            ->get();
+
+        $headers = [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="rapport_absences_' . now()->format('Y-m-d') . '.csv"',
+        ];
+
+        $callback = function () use ($requests) {
+            $handle = fopen('php://output', 'w');
+            fprintf($handle, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM
+            fputcsv($handle, ['ID', 'Employé', 'Email', 'Département', 'Type', 'Début', 'Fin', 'Jours', 'Raison', 'Statut', 'Créé le', 'Chef (date)', 'Directeur (date)']);
+
+            foreach ($requests as $r) {
+                $getApproval = fn(int $level) => $r->approvals->firstWhere('level', $level);
+                $fmt = fn($approval) => $approval ? $approval->reviewed_at?->format('d/m/Y H:i') ?? '' : '';
+
+                fputcsv($handle, [
+                    $r->id,
+                    $r->user->name,
+                    $r->user->email,
+                    $r->user->department?->name ?? '',
+                    $r->absenceType->name,
+                    $r->start_date->format('d/m/Y'),
+                    $r->end_date->format('d/m/Y'),
+                    $r->days_count,
+                    $r->reason ?? '',
+                    $r->status,
+                    $r->created_at->format('d/m/Y H:i'),
+                    $fmt($getApproval(1)),
+                    $fmt($getApproval(2)),
+                ]);
+            }
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 }

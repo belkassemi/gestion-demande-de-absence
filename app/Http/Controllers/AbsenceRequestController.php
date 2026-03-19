@@ -10,6 +10,33 @@ use Illuminate\Support\Facades\Auth;
 
 class AbsenceRequestController extends Controller
 {
+    /**
+     * GET /api/absence-requests
+     *
+     * Retourne les demandes d'absence selon le rôle de l'utilisateur:
+     * - employee    → seulement ses propres demandes
+     * - chef_service → toutes les demandes de son équipe
+     * - directeur / admin → toutes les demandes
+     *
+     * Middleware: auth:sanctum
+     *
+     * Headers:
+     *   Authorization: Bearer {token}
+     *   Accept: application/json
+     *
+     * Query Params (optionnels):
+     *   status          (string)  - pending | approved | rejected | cancelled
+     *   absence_type_id (integer) - filtrer par type
+     *   page            (integer) - numéro de page
+     *
+     * Response 200 (paginé):
+     *   {
+     *     "current_page": 1,
+     *     "data": [ { "id":1, "status":"pending", "days_count":5, ... } ],
+     *     "per_page": 20,
+     *     "total": 12
+     *   }
+     */
     public function index(Request $request): JsonResponse
     {
         $user = Auth::user();
@@ -22,8 +49,8 @@ class AbsenceRequestController extends Controller
         // Scope by role
         if (in_array($user->role, ['employee'])) {
             $query->where('user_id', $user->id);
-        } elseif ($user->role === 'chef') {
-            $query->whereHas('user', fn($q) => $q->where('manager_id', $user->id));
+        } elseif ($user->role === 'chef_service') {
+            $query->whereHas('user', fn($q) => $q->where('chef_service_id', $user->id));
         }
         // rh, directeur, admin can see all
 
@@ -31,8 +58,26 @@ class AbsenceRequestController extends Controller
     }
 
     /**
-     * GET /absence-requests/my-stats
-     * Statistics for the authenticated employee.
+     * GET /api/absence-requests/my-stats
+     *
+     * Retourne les statistiques de l'année courante de l'employé connecté.
+     *
+     * Middleware: auth:sanctum
+     *
+     * Headers:
+     *   Authorization: Bearer {token}
+     *   Accept: application/json
+     *
+     * Response 200:
+     *   {
+     *     "year": 2026,
+     *     "total_days": 10,
+     *     "pending": 1,
+     *     "approved": 2,
+     *     "rejected": 0,
+     *     "by_type": { "1": { "days": 5, "count": 1 } },
+     *     "monthly":  { "2026-03": 1 }
+     *   }
      */
     public function myStats(): JsonResponse
     {
@@ -66,6 +111,44 @@ class AbsenceRequestController extends Controller
         ]);
     }
 
+    /**
+     * POST /api/absence-requests
+     *
+     * Crée une nouvelle demande d'absence pour l'employé connecté.
+     * Crée automatiquement 2 enregistrements d'approbation (niveau 1 + niveau 2).
+     *
+     * Middleware: auth:sanctum
+     *
+     * Headers:
+     *   Authorization: Bearer {token}
+     *   Accept: application/json
+     *   Content-Type: application/json
+     *
+     * Request Body (JSON):
+     *   {
+     *     "user_id":         1,           // integer, obligatoire
+     *     "absence_type_id": 1,           // integer, obligatoire
+     *     "start_date":      "2026-04-01", // date YYYY-MM-DD, obligatoire
+     *     "end_date":        "2026-04-05", // date >= start_date, obligatoire
+     *     "reason":          "Vacances",   // string, optionnel
+     *     "document":        null          // fichier PDF/image max 5MB, optionnel
+     *   }
+     *
+     * Response 201:
+     *   {
+     *     "id": 1,
+     *     "user_id": 2,
+     *     "absence_type_id": 1,
+     *     "start_date": "2026-04-01",
+     *     "end_date": "2026-04-05",
+     *     "days_count": 5,
+     *     "reason": "Vacances",
+     *     "status": "pending",
+     *     "current_level": 1
+     *   }
+     *
+     * Response 422: erreurs de validation
+     */
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -95,13 +178,61 @@ class AbsenceRequestController extends Controller
         unset($data['document']); // we mapped this to document_path or it's not a db column directly
 
         $absenceRequest = AbsenceRequest::create($data);
-        $absenceRequest->submit();
+        $absenceRequest->submit(); // sets status pending, current_level=1, calculates days
+
+        // Create the 2 approval records per PRD v2.0
+        // Level 1: chef_service
+        \App\Models\Approval::create([
+            'request_id'    => $absenceRequest->id,
+            'approver_id'   => $absenceRequest->user->chef_service_id ?? $absenceRequest->user_id, // fallback if no chef
+            'level'         => 1,
+            'approver_role' => 'chef_service',
+            'status'        => 'pending',
+        ]);
+
+        // Level 2: directeur (we just set a placeholder or find a directeur, but typically the UI or query resolves this)
+        // For now, we create the record. Director can see level 2 approvals regardless of approver_id as long as they are a director.
+        // We'll set approver_id to a default directeur if exists or just a placeholder if the system supports generic role approvals.
+        // Or if the company has one director, we can find them.
+        $directeur = \App\Models\User::where('role', 'directeur')->first();
+        \App\Models\Approval::create([
+            'request_id'    => $absenceRequest->id,
+            'approver_id'   => $directeur ? $directeur->id : $absenceRequest->user_id,
+            'level'         => 2,
+            'approver_role' => 'directeur',
+            'status'        => 'pending',
+        ]);
 
         AuditLog::log('created', 'AbsenceRequest', $absenceRequest->id);
 
         return response()->json($absenceRequest->load('user', 'absenceType'), 201);
     }
 
+    /**
+     * GET /api/absence-requests/{id}
+     *
+     * Affiche les détails complets d'une demande avec approbations et documents.
+     *
+     * Middleware: auth:sanctum
+     *
+     * Headers:
+     *   Authorization: Bearer {token}
+     *   Accept: application/json
+     *
+     * URL Params:
+     *   id (integer) - ID de la demande
+     *
+     * Response 200:
+     *   {
+     *     "id": 1, "status": "pending", "current_level": 1,
+     *     "user": {...}, "absence_type": {...},
+     *     "approvals": [
+     *       { "level":1, "approver_role":"chef_service", "status":"pending" },
+     *       { "level":2, "approver_role":"directeur",    "status":"pending" }
+     *     ],
+     *     "documents": []
+     *   }
+     */
     public function show(AbsenceRequest $absenceRequest): JsonResponse
     {
         return response()->json(
@@ -109,8 +240,37 @@ class AbsenceRequestController extends Controller
         );
     }
 
+    /**
+     * PUT /api/absence-requests/{id}
+     *
+     * Modifie une demande existante. Seules les demandes en statut "pending" peuvent être modifiées.
+     *
+     * Middleware: auth:sanctum
+     *
+     * Headers:
+     *   Authorization: Bearer {token}
+     *   Accept: application/json
+     *   Content-Type: application/json
+     *
+     * URL Params:
+     *   id (integer) - ID de la demande
+     *
+     * Request Body (champs optionnels):
+     *   {
+     *     "start_date": "2026-04-02",
+     *     "end_date":   "2026-04-06",
+     *     "reason":     "Nouveau motif"
+     *   }
+     *
+     * Response 200: demande mise à jour
+     * Response 422: { "message": "Seules les demandes en attente peuvent être modifiées." }
+     */
     public function update(Request $request, AbsenceRequest $absenceRequest): JsonResponse
     {
+        if ($absenceRequest->status !== 'pending') {
+            return response()->json(['message' => 'Seules les demandes en attente peuvent être modifiées.'], 422);
+        }
+
         $validated = $request->validate([
             'start_date'  => 'sometimes|date',
             'end_date'    => 'sometimes|date|after_or_equal:start_date',
@@ -133,6 +293,10 @@ class AbsenceRequestController extends Controller
 
     public function cancel(AbsenceRequest $absenceRequest): JsonResponse
     {
+        if ($absenceRequest->status !== 'pending') {
+            return response()->json(['message' => 'Seules les demandes en attente peuvent être annulées.'], 422);
+        }
+
         $absenceRequest->cancel();
         AuditLog::log('cancelled', 'AbsenceRequest', $absenceRequest->id);
         return response()->json(['message' => 'Request cancelled.', 'request' => $absenceRequest]);

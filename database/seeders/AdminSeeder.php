@@ -58,5 +58,49 @@ class AdminSeeder extends Seeder
                 'role'     => 'admin',
             ]
         );
+
+        // 4. Seed other roles for manual testing
+        $directeur = User::firstOrCreate(
+            ['email' => 'directeur@test.ma'],
+            [
+                'name'     => 'Directeur Général',
+                'password' => Hash::make('password123'),
+                'role'     => 'directeur',
+            ]
+        );
+
+        $dept = \App\Models\Department::first();
+        if ($dept) {
+            $dept->update(['director_id' => $directeur->id, 'code' => 'D-01']);
+
+            $chefService = User::firstOrCreate(
+                ['email' => 'chef@test.ma'],
+                [
+                    'name'     => 'Chef de Service IT',
+                    'password' => Hash::make('password123'),
+                    'role'     => 'chef_service',
+                    'department_id' => $dept->id,
+                ]
+            );
+
+            $service = \App\Models\Service::firstOrCreate(
+                ['name' => 'Support Informatique', 'department_id' => $dept->id],
+                ['chef_service_id' => $chefService->id]
+            );
+
+            $chefService->update(['service_id' => $service->id]);
+
+            User::firstOrCreate(
+                ['email' => 'employe@test.ma'],
+                [
+                    'name'     => 'Employé Standard',
+                    'password' => Hash::make('password123'),
+                    'role'     => 'employee',
+                    'department_id'   => $dept->id,
+                    'service_id'      => $service->id,
+                    'chef_service_id' => $chefService->id,
+                ]
+            );
+        }
     }
 }
