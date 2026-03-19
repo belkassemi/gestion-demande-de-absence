@@ -1,13 +1,12 @@
 # API Documentation pour Postman (PRD v2.0)
 
-Ce fichier regroupe tous les endpoints, méthodes, headers, requêtes (requests) et réponses (responses) pour faciliter vos tests dans Postman.
+Ce document contient l'intégralité des requêtes et réponses attendues pour toutes les routes API de l'application, afin de faciliter les tests via Postman.
 
 ---
 
-## 1. Authentification
-Tous les endpoints ci-dessous nécessitent d'abord de récupérer un token.
+## 1. Authentification & Profil
 
-### Login
+### 1.1. Login
 * **URL** : `POST /api/login`
 * **Headers** : `Accept: application/json`
 * **Request JSON** :
@@ -21,27 +20,77 @@ Tous les endpoints ci-dessous nécessitent d'abord de récupérer un token.
 ```json
 {
   "message": "Login successful",
-  "user": { "id": 4, "role": "employee", "name": "..." },
+  "user": { "id": 4, "role": "employee", "name": "Mohammed Ali" },
   "token": "1|ZzXy..."
 }
 ```
 
-> **IMPORTANT :** Copiez la valeur de `"token"` et allez dans *Authorization > Bearer Token* dans Postman pour l'utiliser sur toutes les requêtes qui suivent.
+### 1.2. Logout
+* **URL** : `POST /api/logout`
+* **Headers** : `Authorization: Bearer {token}`, `Accept: application/json`
+* **Response 200** :
+```json
+{ "message": "Logged out successfully" }
+```
+
+### 1.3. Voir son Profil
+* **URL** : `GET /api/profile`
+* **Headers** : `Authorization: Bearer {token}`, `Accept: application/json`
+* **Response 200** :
+```json
+{
+  "id": 4,
+  "name": "Mohammed Ali",
+  "email": "mohammed@test.ma",
+  "role": "employee",
+  "department": { "id": 1, "name": "IT" },
+  "service": { "id": 1, "name": "Développement" },
+  "chef_service": { "id": 3, "name": "Chef" }
+}
+```
+
+### 1.4. Mettre à jour son Profil
+* **URL** : `PUT /api/profile`
+* **Headers** : `Authorization: Bearer {token}`
+* **Request JSON** :
+```json
+{
+  "name": "Mohammed Ali Updated",
+  "email": "newemail@test.ma"
+}
+```
+* **Response 200** : (User object updated)
+
+### 1.5. Changer de Mot de Passe
+* **URL** : `POST /api/profile/change-password`
+* **Headers** : `Authorization: Bearer {token}`
+* **Request JSON** :
+```json
+{
+  "current_password": "password123",
+  "new_password": "newpassword123",
+  "new_password_confirmation": "newpassword123"
+}
+```
+* **Response 200** :
+```json
+{ "message": "Password changed successfully." }
+```
 
 ---
 
 ## 2. Employé : Demandes d'Absence
 
-### Créer une nouvelle demande
+### 2.1. Créer une nouvelle demande
 * **URL** : `POST /api/absence-requests`
-* **Headers** : `Authorization: Bearer {token}`, `Accept: application/json`
+* **Headers** : `Authorization: Bearer {token}`
 * **Request JSON** :
 ```json
 {
   "user_id": 4,
   "absence_type_id": 1,
-  "start_date": "2026-04-01",
-  "end_date": "2026-04-05",
+  "start_date": "2026-04-10",
+  "end_date": "2026-04-15",
   "reason": "Congé annuel"
 }
 ```
@@ -55,23 +104,35 @@ Tous les endpoints ci-dessous nécessitent d'abord de récupérer un token.
 }
 ```
 
-### Lister ses propres demandes
+### 2.2. Lister ses propres demandes
 * **URL** : `GET /api/absence-requests`
-* **Headers** : `Authorization: Bearer {token}`, `Accept: application/json`
-* **Response 200** :
+* **Response 200** : Paginated list of user requests.
+
+### 2.3. Détails d'une demande
+* **URL** : `GET /api/absence-requests/{id}`
+* **Response 200** : request object with approvals history and documents.
+
+### 2.4. Modifier une demande en attente
+* **URL** : `PUT /api/absence-requests/{id}`
+* **Request JSON** :
 ```json
 {
-  "current_page": 1,
-  "data": [
-    { "id": 1, "status": "pending", "days_count": 5 }
-  ],
-  "total": 1
+  "start_date": "2026-04-11",
+  "end_date": "2026-04-16", 
+  "reason": "Updated reason"
 }
 ```
+* **Response 200** : Updated request data.
 
-### Statistiques de l'employé
+### 2.5. Annuler une demande en attente
+* **URL** : `DELETE /api/absence-requests/{id}`
+* **Response 200** :
+```json
+{ "message": "Request cancelled successfully." }
+```
+
+### 2.6. Statistiques Personnelles
 * **URL** : `GET /api/absence-requests/my-stats`
-* **Headers** : `Authorization: Bearer {token}`
 * **Response 200** :
 ```json
 {
@@ -87,25 +148,31 @@ Tous les endpoints ci-dessous nécessitent d'abord de récupérer un token.
 
 ## 3. Chef de Service (Niveau 1)
 
-### Lister les demandes en attente d'approbation (Niveau 1)
+### 3.1. Lister les demandes (Niveau 1) de son équipe
 * **URL** : `GET /api/chef-service/pending-requests`
-* **Headers** : `Authorization: Bearer {chef_token}`
+* **Query Params** : (Aucun)
+* **Response 200** : Liste des demandes dont `status = pending` et `current_level = 1`.
+
+### 3.2. Détail d'une demande (avec historique de l'employé)
+* **URL** : `GET /api/chef-service/requests/{id}`
 * **Response 200** :
 ```json
-[
-  {
-    "id": 1,
-    "user": { "name": "Employé 1" },
-    "start_date": "2026-04-01",
-    "status": "pending",
-    "current_level": 1
-  }
-]
+{
+  "id": 1,
+  "employee": {
+    "name": "Mohammed Ali",
+    "total_absences": 12
+  },
+  "start_date": "2026-04-01",
+  "end_date": "2026-04-05",
+  "days_count": 5,
+  "reason": "Vacances",
+  "status": "pending"
+}
 ```
 
-### Approuver ou Rejeter une demande (Niveau 1)
-* **URL** : `POST /api/chef-service/requests/{id}/review` (Remplacer {id} par l'ID de la demande)
-* **Headers** : `Authorization: Bearer {chef_token}`, `Accept: application/json`
+### 3.3. Approuver ou Rejeter (Niveau 1)
+* **URL** : `POST /api/chef-service/requests/{id}/review`
 * **Request JSON (Approuver)** :
 ```json
 {
@@ -113,114 +180,133 @@ Tous les endpoints ci-dessous nécessitent d'abord de récupérer un token.
   "comment": "OK pour moi"
 }
 ```
-* **Request JSON (Rejeter)** :
-```json
-{
-  "action": "reject",
-  "comment": "Pas assez de jours restants."
-}
-```
-* **Response 200** :
-```json
-{
-  "message": "Demande approuvée au niveau 1.",
-  "request": { "id": 1, "status": "pending", "current_level": 2 }
-}
-```
+* **Response 200** : Demande passe au `current_level: 2`.
+
+### 3.4. Calendrier de l'équipe
+* **URL** : `GET /api/chef-service/team-calendar`
+* **Query Params** : `?month=4&year=2026`
+* **Response 200** : Liste des absences formattées pour un calendrier.
+
+### 3.5. Historique total de l'équipe
+* **URL** : `GET /api/chef-service/team-history`
+* **Query Params** : `?status=approved&user_id=5`
+* **Response 200** : Pagination de toutes les absences de l'équipe.
 
 ---
 
-## 4. Directeur (Niveau 2 Final)
+## 4. Directeur (Niveau 2)
 
-### Lister les demandes en attente de décision finale (Niveau 2)
+### 4.1. Lister les demandes (Niveau 2)
 * **URL** : `GET /api/directeur/pending-requests`
-* **Headers** : `Authorization: Bearer {directeur_token}`
-* **Response 200** :
-```json
-[
-  {
-    "id": 1,
-    "user": { "name": "Employé 1" },
-    "status": "pending",
-    "current_level": 2
-  }
-]
-```
+* **Response 200** : Liste des demandes `status = pending` et `current_level = 2`.
 
-### Approuver ou Rejeter (Niveau 2)
+### 4.2. Détail d'une demande avec approbations
+* **URL** : `GET /api/directeur/requests/{id}`
+* **Response 200** :  Détails + `approvals` array listant le vote du chef_service.
+
+### 4.3. Approuver ou Rejeter Finalement (Niveau 2)
 * **URL** : `POST /api/directeur/requests/{id}/review`
-* **Headers** : `Authorization: Bearer {directeur_token}`
 * **Request JSON** :
 ```json
 {
   "action": "approve",
-  "comment": "Accord Final"
+  "comment": "Accord Final Directeur"
 }
 ```
+* **Response 200** : Demande passe à `status: approved` ou `status: rejected`.
+
+### 4.4. Dashboard Exécutif
+* **URL** : `GET /api/directeur/dashboard`
 * **Response 200** :
 ```json
 {
-  "message": "Demande approuvée au niveau 2.",
-  "request": { "id": 1, "status": "approved", "current_level": 3 }
+  "pending_for_directeur": 5,
+  "approved_this_month": 45,
+  "approval_rate": 94
 }
 ```
 
-### Exporter le Rapport (Directeur)
+### 4.5. Statistiques Globales
+* **URL** : `GET /api/directeur/statistics`
+* **Query Params** : `?year=2026`
+* **Response 200** : stats by department, by type, and monthly trend.
+
+### 4.6. Export Excel / CSV
 * **URL** : `GET /api/directeur/reports/export`
-* **Response** : Téléchargement du fichier CSV brut.
+* **Response** : Fichier CSV.
 
 ---
 
-## 5. Administrateur (Lecture / Gestion des accès)
+## 5. Administrateur (Lecture + Configuration)
 
-L'admin ne peut pas approuver les demandes, mais il a accès à toutes les données.
-Assurez-vous de vous connecter avec le compte admin pour obtenir son token.
+L'admin a accès à toutes les données en lecture et configure les types, départements et rôles.
 
-### Dashboard Global
+### 5.1. Dashboard Admin
 * **URL** : `GET /api/admin/dashboard`
-* **Headers** : `Authorization: Bearer {admin_token}`
-* **Response 200** :
-```json
-{
-  "total_requests": 150,
-  "pending": 5,
-  "approved": 140,
-  "rejected": 5,
-  "total_users": 50
-}
-```
+* **Response 200** : KPIs globaux.
 
-### Statistiques Globales
+### 5.2. Statistiques Admin
 * **URL** : `GET /api/admin/statistics`
-* **Response 200** : (Données par département et par mois)
+* **Response 200** : Identique au directeur.
 
-### Gérer les Utilisateurs (CRUD)
-* **Lire tous les users** : `GET /api/admin/users`
-* **Créer un user** : `POST /api/admin/users`
+### 5.3. Toutes les demandes (Lecture seule)
+* **URL** : `GET /api/admin/all-requests`
+* **Query Params** : `?status=approved&department_id=2`
+* **Response 200** : Liste paginée globale.
+
+### 5.4. Statistiques Utilisateurs (Absences par employé)
+* **URL** : `GET /api/admin/all-users-stats`
+* **Response 200** : Liste des utilisateurs avec leur nombre total de jours.
+
+### 5.5. Export CSV Admin
+* **URL** : `GET /api/admin/reports/export`
+* **Response** : Fichier CSV.
+
+### 5.6. Audit Logs
+* **URL** : `GET /api/admin/audit-logs`
+* **Response 200** : Historique des actions dans le système.
+
+### 5.7. Utilisateurs (CRUD)
+* **Lire** : `GET /api/admin/users`
+* **Lire 1 user** : `GET /api/admin/users/{id}`
+* **Créer** : `POST /api/admin/users`
 ```json
 {
-  "name": "Jane Doe",
-  "email": "jane@example.com",
-  "password": "password123",
-  "role": "employee",
-  "department_id": 1,
-  "service_id": 2,
-  "chef_service_id": 3,
-  "is_active": true
+  "name": "Jane", "email": "jane@test.ma", "password": "password123",
+  "role": "employee", "department_id": 1, "service_id": 2, "is_active": true
 }
 ```
-* **Modifier un user** : `PUT /api/admin/users/{id}`
-* **Supprimer un user** : `DELETE /api/admin/users/{id}`
+* **Modifier** : `PUT /api/admin/users/{id}`
+* **Supprimer** : `DELETE /api/admin/users/{id}`
 
-### Gérer les Services (CRUD)
-* **Lire tous** : `GET /api/admin/services`
+### 5.8. Départements (CRUD)
+* **Lire** : `GET /api/admin/departments`
+* **Créer** : `POST /api/admin/departments`
+```json
+{ "name": "IT", "code": "D-01", "director_id": 2 }
+```
+* **Modifier** : `PUT /api/admin/departments/{id}`
+* **Supprimer** : `DELETE /api/admin/departments/{id}`
+
+### 5.9. Services (CRUD)
+* **Lire** : `GET /api/admin/services`
 * **Créer** : `POST /api/admin/services`
 ```json
-{
-  "name": "Equipe Web",
-  "department_id": 1,
-  "chef_service_id": 2
-}
+{ "name": "Développement", "department_id": 1, "chef_service_id": 3 }
 ```
 * **Modifier** : `PUT /api/admin/services/{id}`
 * **Supprimer** : `DELETE /api/admin/services/{id}`
+
+### 5.10. Types d'Absence (CRUD)
+* **Lire** : `GET /api/admin/absence-types`
+* **Criérer** : `POST /api/admin/absence-types`
+```json
+{
+  "name": "Congé Maternité",
+  "requires_document": true,
+  "color": "#F472B6",
+  "is_active": true
+}
+```
+* **Modifier** : `PUT /api/admin/absence-types/{id}`
+* **Supprimer** : `DELETE /api/admin/absence-types/{id}`
