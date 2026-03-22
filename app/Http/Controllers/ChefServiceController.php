@@ -190,7 +190,7 @@ class ChefServiceController extends Controller
 
         $absences = AbsenceRequest::with(['user', 'absenceType'])
             ->whereHas('user', fn($q) => $q->where('chef_service_id', $chef->id))
-            ->where('status', 'approved')
+            ->whereIn('status', ['pending', 'approved'])
             ->when($request->month, function ($q) use ($request) {
                 $q->whereMonth('start_date', $request->month)
                   ->orWhereMonth('end_date', $request->month);

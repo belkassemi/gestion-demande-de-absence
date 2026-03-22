@@ -152,7 +152,6 @@ class AbsenceRequestController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'user_id'          => 'required|exists:users,id',
             'absence_type_id'  => 'required|exists:absence_types,id',
             'start_date'       => 'required|date',
             'end_date'         => 'required|date|after_or_equal:start_date',
@@ -161,6 +160,7 @@ class AbsenceRequestController extends Controller
         ]);
 
         $data = $validated;
+        $data['user_id'] = Auth::id(); // Always infer from authenticated user
         
         // Ensure days_count is set correctly based on dates if not passed (though the Model or Observer could do this, we should make sure it's set in the API or calculated here if the Model requires it.
         // For simplicity, let's assume the frontend passes days_count or we calculate it here if it's required.
