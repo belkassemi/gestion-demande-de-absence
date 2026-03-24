@@ -150,32 +150,41 @@ class DirecteurController extends Controller
     {
         $year = $request->year ?? now()->year;
 
-        $base = AbsenceRequest::whereYear('created_at', $year);
-
-        $byDept = (clone $base)
+        $byDept = AbsenceRequest::query()
             ->join('users', 'users.id', '=', 'absence_requests.user_id')
             ->join('departments', 'departments.id', '=', 'users.department_id')
-            ->selectRaw('departments.name as department, count(*) as total, sum(case when absence_requests.status = "approved" then 1 else 0 end) as approved, sum(days_count) as total_days')
+            ->whereYear('absence_requests.created_at', $year)
+            ->selectRaw('departments.name as department,
+                count(*) as total,
+                sum(case when absence_requests.status = "approved" then 1 else 0 end) as approved,
+                sum(absence_requests.days_count) as total_days')
             ->groupBy('departments.name')
             ->get();
 
-        $byType = (clone $base)
+        $byType = AbsenceRequest::query()
             ->join('absence_types', 'absence_types.id', '=', 'absence_requests.absence_type_id')
-            ->selectRaw('absence_types.name as type, count(*) as count, sum(days_count) as days')
+            ->whereYear('absence_requests.created_at', $year)
+            ->selectRaw('absence_types.name as type,
+                count(*) as count,
+                sum(absence_requests.days_count) as days')
             ->groupBy('absence_types.name')
             ->get();
 
-        $monthly = (clone $base)
-            ->selectRaw("DATE_FORMAT(created_at,'%Y-%m') as month, count(*) as count, sum(days_count) as days")
+        $monthly = AbsenceRequest::query()
+            ->whereYear('absence_requests.created_at', $year)
+            ->selectRaw("DATE_FORMAT(absence_requests.created_at,'%Y-%m') as month,
+                count(*) as count,
+                sum(absence_requests.days_count) as days")
             ->groupBy('month')
             ->orderBy('month')
             ->get();
 
-        $topEmployees = (clone $base)
-            ->where('status', 'approved')
+        $topEmployees = AbsenceRequest::query()
+            ->where('absence_requests.status', 'approved')
             ->join('users', 'users.id', '=', 'absence_requests.user_id')
-            ->selectRaw('users.name, sum(days_count) as total_days')
-            ->groupBy('users.name')
+            ->whereYear('absence_requests.created_at', $year)
+            ->selectRaw('users.name, sum(absence_requests.days_count) as total_days')
+            ->groupBy('users.id', 'users.name')
             ->orderByDesc('total_days')
             ->limit(10)
             ->get();

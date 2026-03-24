@@ -41,7 +41,7 @@ class AbsenceRequestController extends Controller
     {
         $user = Auth::user();
 
-        $query = AbsenceRequest::with(['user', 'absenceType', 'approvals'])
+        $query = AbsenceRequest::with(['user', 'absenceType', 'approvals.approver'])
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->absence_type_id, fn($q) => $q->where('absence_type_id', $request->absence_type_id))
             ->latest();
