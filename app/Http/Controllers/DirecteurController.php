@@ -252,4 +252,52 @@ class DirecteurController extends Controller
 
         return response()->stream($callback, 200, $headers);
     }
+
+    /**
+     * GET /api/directeur/calendar
+     *
+     * Returns all absence requests (pending + approved) across all departments
+     * for calendar display. Each absence includes department info for color-coding.
+     *
+     * Query Params (optional):
+     *   month (string) - format "YYYY-MM"
+     */
+    public function allDepartmentsCalendar(Request $request): JsonResponse
+    {
+        $query = AbsenceRequest::with(['user.department', 'absenceType'])
+            ->whereIn('status', ['pending', 'approved']);
+
+        if ($request->month) {
+            [$year, $month] = explode('-', $request->month);
+            $query->where(function ($q) use ($year, $month) {
+                $q->whereYear('start_date', $year)->whereMonth('start_date', $month)
+                  ->orWhereYear('end_date', $year)->whereMonth('end_date', $month);
+            });
+        }
+
+        $absences = $query->get()->map(function ($r) {
+            return [
+                'id'           => $r->id,
+                'user'         => [
+                    'id'         => $r->user->id,
+                    'name'       => $r->user->name,
+                    'department' => [
+                        'id'   => $r->user->department?->id,
+                        'name' => $r->user->department?->name,
+                    ],
+                ],
+                'absence_type' => [
+                    'name'  => $r->absenceType?->name,
+                    'color' => $r->absenceType?->color,
+                ],
+                'start_date'   => $r->start_date,
+                'end_date'     => $r->end_date,
+                'days_count'   => $r->days_count,
+                'status'       => $r->status,
+                'reason'       => $r->reason,
+            ];
+        });
+
+        return response()->json($absences);
+    }
 }

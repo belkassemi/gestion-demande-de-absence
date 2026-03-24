@@ -79,6 +79,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('dashboard',                 [DirecteurController::class, 'dashboard']);
         Route::get('statistics',                [DirecteurController::class, 'statistics']);
         Route::get('reports/export',            [DirecteurController::class, 'exportReport']);
+        Route::get('calendar',                  [DirecteurController::class, 'allDepartmentsCalendar']);
     });
 
     // Admin Routes
@@ -96,6 +97,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('all-requests',    [AdminController::class, 'allRequests']);
         Route::get('all-users-stats', [AdminController::class, 'allUsersStats']);
         Route::get('reports/export',  [AdminController::class, 'exportReport']);
+        Route::get('calendar',        [AdminController::class, 'allCalendar']);
 
         // Departments & Services
         Route::apiResource('departments', DepartmentController::class);
