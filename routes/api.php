@@ -69,6 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('requests/{absenceRequest}/review', [ChefServiceController::class, 'review']);
         Route::get('team-calendar',            [ChefServiceController::class, 'teamCalendar']);
         Route::get('team-history',             [ChefServiceController::class, 'teamHistory']);
+        Route::get('reports/export',           [ChefServiceController::class, 'exportReport']);
     });
 
     // Directeur Routes 

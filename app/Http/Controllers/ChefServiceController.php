@@ -244,4 +244,55 @@ class ChefServiceController extends Controller
 
         return response()->json($requests);
     }
+
+    /**
+     * GET /api/chef-service/reports/export
+     * Exporte l'historique de l'équipe du chef en CSV.
+     */
+    public function exportReport(Request $request)
+    {
+        $chef = Auth::user();
+        $status = $request->status;
+
+        $requests = AbsenceRequest::with(['user.department', 'absenceType', 'approvals.approver'])
+            ->whereHas('user', fn($q) => $q->where('chef_service_id', $chef->id))
+            ->when($status, fn($q) => $q->where('status', $status))
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $headers = [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="rapport_equipe_' . now()->format('Y-m-d') . '.csv"',
+        ];
+
+        $callback = function () use ($requests) {
+            $handle = fopen('php://output', 'w');
+            fprintf($handle, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM
+            fputcsv($handle, ['ID', 'Employé', 'Email', 'Département', 'Type', 'Début', 'Fin', 'Jours', 'Raison', 'Statut', 'Créé le', 'Chef (date)', 'Directeur (date)']);
+
+            foreach ($requests as $r) {
+                $getApproval = fn(int $level) => $r->approvals->firstWhere('level', $level);
+                $fmt = fn($approval) => $approval ? $approval->reviewed_at?->format('d/m/Y H:i') ?? '' : '';
+
+                fputcsv($handle, [
+                    $r->id,
+                    $r->user->name,
+                    $r->user->email,
+                    $r->user->department?->name ?? '',
+                    $r->absenceType->name,
+                    $r->start_date->format('d/m/Y'),
+                    $r->end_date->format('d/m/Y'),
+                    $r->days_count,
+                    $r->reason ?? '',
+                    $r->status,
+                    $r->created_at->format('d/m/Y H:i'),
+                    $fmt($getApproval(1)),
+                    $fmt($getApproval(2)),
+                ]);
+            }
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }
