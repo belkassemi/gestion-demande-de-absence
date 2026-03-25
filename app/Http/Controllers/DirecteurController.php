@@ -8,6 +8,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\AbsenceApprovedMail;
 
 class DirecteurController extends Controller
 {
@@ -84,6 +86,14 @@ class DirecteurController extends Controller
         if ($validated['action'] === 'approve') {
             $absenceRequest->approve(2, $validated['comment'] ?? '');
             AuditLog::log('directeur_approved', 'AbsenceRequest', $absenceRequest->id, Auth::id());
+            
+            // Send email to the requester
+            try {
+                Mail::to($absenceRequest->user->email)->send(new AbsenceApprovedMail($absenceRequest));
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error("Failed to send approval email: " . $e->getMessage());
+            }
+
             $message = 'Demande approuvée définitivement.';
         } else {
             if (empty($validated['comment'])) {
