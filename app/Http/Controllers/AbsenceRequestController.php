@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use App\Notifications\RequestStatusChanged;
 
 class AbsenceRequestController extends Controller
 {
@@ -204,6 +205,14 @@ class AbsenceRequestController extends Controller
         ]);
 
         AuditLog::log('created', 'AbsenceRequest', $absenceRequest->id);
+
+        // Notify the Chef de Service if applicable
+        if (isset($absenceRequest->user->chef_service_id)) {
+            $chef = \App\Models\User::find($absenceRequest->user->chef_service_id);
+            if ($chef) {
+                $chef->notify(new RequestStatusChanged($absenceRequest, 'new_request'));
+            }
+        }
 
         return response()->json($absenceRequest->load('user', 'absenceType'), 201);
     }

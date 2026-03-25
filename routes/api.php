@@ -14,6 +14,7 @@ use App\Http\Controllers\AdminController;
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\UserController;
 
 /*
@@ -30,6 +31,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Auth
     Route::post('logout', [AuthController::class, 'logout']);
+
+    // Notifications
+    Route::get('notifications',                          [NotificationController::class, 'index']);
+    Route::post('notifications/{id}/read',               [NotificationController::class, 'markRead']);
+    Route::post('notifications/read-all',                [NotificationController::class, 'markAllRead']);
 
     //Profile
     Route::get('profile',                  [ProfileController::class, 'show']);

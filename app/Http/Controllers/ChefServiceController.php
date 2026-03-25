@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\AbsenceRequest;
 use App\Models\AuditLog;
+use App\Models\User;
+use App\Notifications\RequestStatusChanged;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -143,6 +145,15 @@ class ChefServiceController extends Controller
         if ($validated['action'] === 'approve') {
             $absenceRequest->approve(1, $validated['comment'] ?? '');
             AuditLog::log('chef_approved', 'AbsenceRequest', $absenceRequest->id, Auth::id());
+
+            // Notify employee
+            $absenceRequest->user->notify(new RequestStatusChanged($absenceRequest->fresh()->load(['absenceType', 'user']), 'chef_approved'));
+
+            // Notify directeur(s) that a request is waiting for them
+            User::where('role', 'directeur')->each(function ($directeur) use ($absenceRequest) {
+                $directeur->notify(new RequestStatusChanged($absenceRequest->fresh()->load(['absenceType', 'user']), 'pending_directeur'));
+            });
+
             $message = 'Demande approuvée au niveau 1.';
         } else {
             if (empty($validated['comment'])) {
@@ -150,6 +161,10 @@ class ChefServiceController extends Controller
             }
             $absenceRequest->reject(1, $validated['comment']);
             AuditLog::log('chef_rejected', 'AbsenceRequest', $absenceRequest->id, Auth::id());
+
+            // Notify employee
+            $absenceRequest->user->notify(new RequestStatusChanged($absenceRequest->fresh()->load(['absenceType', 'user']), 'chef_rejected'));
+
             $message = 'Demande rejetée au niveau 1.';
         }
 
