@@ -56,7 +56,7 @@ class UserController extends Controller
             'name'            => 'required|string|max:255',
             'email'           => 'required|string|email|max:255|unique:users',
             'password'        => 'required|string|min:8',
-            'role'            => 'required|in:employee,chef_service,directeur,admin',
+            'role'            => 'required|in:employee,chef_service,directeur',
             'department_id'   => 'nullable|exists:departments,id',
             'service_id'      => 'nullable|exists:services,id',
             'chef_service_id' => 'nullable|exists:users,id',
